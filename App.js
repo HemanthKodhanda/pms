@@ -53,10 +53,38 @@ function MyTabs() {
         tabBarInactiveTintColor: 'gray',
       })}
     >
-      <Tab.Screen name="Dashboard" component={Dashboard} />
-      <Tab.Screen name="Projects" component={Projects} />
-      <Tab.Screen name="Tasks" component={Tasks} />
-      <Tab.Screen name="Logout" component={Logout} />
+      <Tab.Screen
+        name="Dashboard"
+        component={Dashboard}
+        options={{ unmountOnBlur: true }}
+        listeners={({ navigation }) => ({
+          blur: () => navigation.setParams({ screen: undefined }),
+        })}
+      />
+      <Tab.Screen
+        name="Projects"
+        component={Projects}
+        options={{ unmountOnBlur: true }}
+        listeners={({ navigation }) => ({
+          blur: () => navigation.setParams({ screen: undefined }),
+        })}
+      />
+      <Tab.Screen
+        name="Tasks"
+        component={Tasks}
+        options={{ unmountOnBlur: true }}
+        listeners={({ navigation }) => ({
+          blur: () => navigation.setParams({ screen: undefined }),
+        })}
+      />
+      <Tab.Screen
+        name="Logout"
+        component={Logout}
+        options={{ unmountOnBlur: true }}
+        listeners={({ navigation }) => ({
+          blur: () => navigation.setParams({ screen: undefined }),
+        })}
+      />
     </Tab.Navigator>
   )
 }

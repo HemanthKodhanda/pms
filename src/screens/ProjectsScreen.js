@@ -7,8 +7,10 @@ import {
   TouchableOpacity,
   Modal,
   TextInput,
+  Alert,
+  KeyboardAvoidingView,
 } from 'react-native'
-import React, { useEffect, useState, useContext } from 'react'
+import React, { useEffect, useState, useRef, useContext } from 'react'
 import * as SQLite from 'expo-sqlite'
 import { UserContext } from '../UserContext'
 
@@ -31,9 +33,10 @@ const db = openDatabase()
 
 const ProjectsScreen = ({ route, navigation }) => {
   const { userId, setUserId, userEmail, setUserEmail } = useContext(UserContext)
-  const [isModalVisible, setModalVisible] = useState(false)
+  const [isProjectModalVisible, setProjectModalVisible] = useState(false)
   const [newProjectTitle, setNewProjectTitle] = useState('')
   const [projectList, setProjectList] = useState([])
+  const titleInputRef = useRef(null)
 
   // Check if the 'projects' table exists, create it if not
   useEffect(() => {
@@ -51,11 +54,23 @@ const ProjectsScreen = ({ route, navigation }) => {
     })
   }, [])
 
+  // SELECT projects.id, projects.title, COUNT(tasks.id) AS totalTasks,
+  //  SUM(tasks.hoursWorked) AS totalHoursWorked FROM projects LEFT JOIN tasks
+  // ON projects.id = tasks.projectId GROUP BY projects.id, projects.title
+
   // Fetch all projects from the 'projects' table
   const fetchProjects = () => {
     db.transaction((tx) => {
       tx.executeSql(
-        'SELECT * FROM projects',
+        `SELECT projects.*, users.email as email, COUNT(tasks.id) as totalTasks, SUM(tasks.hoursWorked) as totalHours,SUM(tasks.totalCost) as totalCost,
+          inprogressTasks.nooftasks as noofinprogressTasks,
+          completedTasks.nooftasks as noofcompletedTasks
+         FROM projects
+         INNER JOIN users ON projects.adminId = users.id
+         LEFT JOIN tasks ON projects.id = tasks.projectId
+         LEFT JOIN (SELECT COUNT(*) as nooftasks, projectId from tasks WHERE status != 'Completed' GROUP BY projectId) as inprogressTasks ON projects.id = inprogressTasks.projectId
+         LEFT JOIN (SELECT COUNT(*) as nooftasks, projectId from tasks WHERE status == 'Completed' GROUP BY projectId) as completedTasks ON projects.id = completedTasks.projectId
+         GROUP BY projects.id`,
         [],
         (_, { rows }) => {
           if (rows.length > 0) {
@@ -65,9 +80,14 @@ const ProjectsScreen = ({ route, navigation }) => {
                 id: project.id,
                 title: project.title,
                 adminid: project.adminId,
+                adminemail: project.email,
                 totalHours: project.totalHours,
                 totalCost: project.totalCost,
                 status: project.status,
+                totalTasks: project.totalTasks,
+                totalHours: project.totalHours,
+                inprogressTasks: project.noofinprogressTasks,
+                completedTasks: project.noofcompletedTasks,
               }
             })
             const sortedProjects = projectlist.sort((a, b) => b.id - a.id)
@@ -86,7 +106,10 @@ const ProjectsScreen = ({ route, navigation }) => {
 
   useEffect(() => {
     fetchProjects()
-  }, [])
+    if (isProjectModalVisible) {
+      titleInputRef.current.focus()
+    }
+  }, [isProjectModalVisible])
 
   const projectCount = projectList.length
 
@@ -99,12 +122,13 @@ const ProjectsScreen = ({ route, navigation }) => {
     }
 
     const isCompleted = item.status === 'Completed'
+    const isAdmin = item.adminid === userId
 
     return (
       <View style={cardStyle}>
         <View style={styles.projectContainer}>
           <Text style={styles.titleText}>{item.title}</Text>
-          <Text>Admin: {item.adminid}</Text>
+          <Text style={styles.admin}>Admin: {item.adminemail}</Text>
           <Text>Total Hours: {item.totalHours}</Text>
           <Text>Total Cost: ${item.totalCost}</Text>
           <Text>Total Tasks: {item.totalTasks}</Text>
@@ -115,7 +139,7 @@ const ProjectsScreen = ({ route, navigation }) => {
             <TouchableOpacity onPress={() => {}} style={styles.cardbuttonTasks}>
               <Text style={styles.buttonTextTasks}>Tasks</Text>
             </TouchableOpacity>
-            {!isCompleted && (
+            {!isCompleted && isAdmin && (
               <TouchableOpacity
                 onPress={() => {}}
                 style={styles.cardbuttonComplete}
@@ -141,7 +165,7 @@ const ProjectsScreen = ({ route, navigation }) => {
   }
 
   const toggleModal = () => {
-    setModalVisible(!isModalVisible)
+    setProjectModalVisible(!isProjectModalVisible)
   }
 
   const handleAddProject = () => {
@@ -173,6 +197,9 @@ const ProjectsScreen = ({ route, navigation }) => {
 
   return (
     <View style={styles.container}>
+      <View>
+        <Text>Hello {userEmail}</Text>
+      </View>
       <View style={styles.header}>
         <Text style={styles.title}>All Projects ({projectCount})</Text>
         <TouchableOpacity onPress={toggleModal} style={styles.button}>
@@ -187,12 +214,13 @@ const ProjectsScreen = ({ route, navigation }) => {
       />
 
       {/* Modal */}
-      <Modal visible={isModalVisible} animationType="slide" transparent>
-        <View style={styles.modalContainer}>
+      <Modal visible={isProjectModalVisible} animationType="slide" transparent>
+        <KeyboardAvoidingView style={styles.container} behavior="padding">
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Add New Project</Text>
             <TextInput
               style={styles.input}
+              ref={titleInputRef}
               placeholder="Project Title"
               value={newProjectTitle}
               onChangeText={setNewProjectTitle}
@@ -207,11 +235,11 @@ const ProjectsScreen = ({ route, navigation }) => {
             >
               <Text style={styles.modalButtonText}>Add</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.modalButton} onPress={toggleModal}>
-              <Text style={styles.modalButtonText}>Cancel</Text>
+            <TouchableOpacity style={styles.cancelButton} onPress={toggleModal}>
+              <Text style={styles.cancelButtonLabel}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   )
@@ -305,6 +333,12 @@ const styles = StyleSheet.create({
   disabledButtonTitle: {
     color: 'gray',
   },
+  admin: {
+    fontSize: 14,
+    color: '#888888',
+    marginBottom: 4,
+  },
+
   // Modal styles
   modalContainer: {
     flex: 1,
@@ -317,22 +351,37 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 20,
     margin: 20,
-    width: '80%',
+    width: '90%',
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 10,
   },
+  cancelButton: {
+    backgroundColor: 'gray',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButtonLabel: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   input: {
-    height: 40,
-    borderColor: '#CCCCCC',
-    borderWidth: 1,
-    borderRadius: 5,
-    marginBottom: 10,
+    fontSize: 16,
+    paddingVertical: 12,
     paddingHorizontal: 10,
-    width: '100%',
-    color: '#000000',
+    borderWidth: 1,
+    borderColor: 'gray',
+    borderRadius: 4,
+    color: 'black',
+    paddingRight: 30,
+    marginBottom: 10,
+    backgroundColor: 'white',
+    marginTop: 8,
   },
   modalButton: {
     backgroundColor: '#007AFF',
