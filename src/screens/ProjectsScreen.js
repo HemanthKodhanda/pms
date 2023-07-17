@@ -41,8 +41,19 @@ const ProjectsScreen = ({ route, navigation }) => {
   // Check if the 'projects' table exists, create it if not
   useEffect(() => {
     db.transaction((tx) => {
+      /*       tx.executeSql(
+        `DROP TABLE IF EXISTS projects;`,
+        [],
+        () => {
+          //  console.log('Table created successfully.')
+        },
+        (error) => {
+          console.log('Error creating table: ', error)
+        }
+      ) */
       tx.executeSql(
-        'CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, adminId INTEGER, totalHours INTEGER, totalCost REAL, status TEXT)',
+        `CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, adminId INTEGER, completedByUserId INTEGER,
+        completedDateTime TEXT, totalHours INTEGER, totalCost REAL, status TEXT)`,
         [],
         () => {
           //  console.log('Table created successfully.')
@@ -62,11 +73,12 @@ const ProjectsScreen = ({ route, navigation }) => {
   const fetchProjects = () => {
     db.transaction((tx) => {
       tx.executeSql(
-        `SELECT projects.*, users.email as email, COUNT(tasks.id) as totalTasks, SUM(tasks.hoursWorked) as totalHours,SUM(tasks.totalCost) as totalCost,
+        `SELECT projects.*, users.email as email, users1.email as completedBy, COUNT(tasks.id) as totalTasks, SUM(tasks.hoursWorked) as totalHours,SUM(tasks.totalCost) as totalCost,
           inprogressTasks.nooftasks as noofinprogressTasks,
           completedTasks.nooftasks as noofcompletedTasks
          FROM projects
          INNER JOIN users ON projects.adminId = users.id
+         LEFT JOIN users as users1 ON projects.completedByUserId = users1.id
          LEFT JOIN tasks ON projects.id = tasks.projectId
          LEFT JOIN (SELECT COUNT(*) as nooftasks, projectId from tasks WHERE status != 'Completed' GROUP BY projectId) as inprogressTasks ON projects.id = inprogressTasks.projectId
          LEFT JOIN (SELECT COUNT(*) as nooftasks, projectId from tasks WHERE status == 'Completed' GROUP BY projectId) as completedTasks ON projects.id = completedTasks.projectId
@@ -88,13 +100,16 @@ const ProjectsScreen = ({ route, navigation }) => {
                 totalHours: project.totalHours,
                 inprogressTasks: project.noofinprogressTasks,
                 completedTasks: project.noofcompletedTasks,
+                completedByUserId: project.completedByUserId,
+                completedBy: project.completedBy,
+                completedDateTime: project.completedDateTime,
               }
             })
             const sortedProjects = projectlist.sort((a, b) => b.id - a.id)
             setProjectList(sortedProjects)
             // console.log(sortedProjects)
           } else {
-            Alert.alert('Error', 'No Data available')
+            // Alert.alert('Error', 'No Data available')
           }
         },
         (tx, error) => {
@@ -133,19 +148,32 @@ const ProjectsScreen = ({ route, navigation }) => {
           <Text>Total Cost: ${item.totalCost}</Text>
           <Text>Total Tasks: {item.totalTasks}</Text>
           <Text>In-Progress Tasks: {item.inprogressTasks}</Text>
-          <Text>Compleetd Tasks: {item.completedTasks}</Text>
+          <Text>Completd Tasks: {item.completedTasks}</Text>
           <Text>Status: {item.status}</Text>
+          <View>
+            {isCompleted && <Text>Completed By: {item.completedBy}</Text>}
+            {isCompleted && <Text>Completed At: {item.completedDateTime}</Text>}
+          </View>
           <View style={styles.buttonContainer}>
-            <TouchableOpacity onPress={() => {}} style={styles.cardbuttonTasks}>
+            {/*             <TouchableOpacity onPress={() => {}} style={styles.cardbuttonTasks}>
               <Text style={styles.buttonTextTasks}>Tasks</Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
             {!isCompleted && isAdmin && (
               <TouchableOpacity
-                onPress={() => {}}
+                //onPress={toggleAddHoursModal}
+                onPress={() => handleDeleteProject(item.id)}
+                style={styles.cardbuttonDelete}
+              >
+                <Text style={styles.buttonTextDelete}>Delete</Text>
+              </TouchableOpacity>
+            )}
+            {!isCompleted && isAdmin && (
+              <TouchableOpacity
+                onPress={() => handleComplete(item.id)}
                 style={styles.cardbuttonComplete}
                 disabled={isCompleted}
               >
-                <Text style={styles.buttonText}>Complete</Text>
+                <Text style={styles.buttonTextComplete}>Complete</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -154,15 +182,53 @@ const ProjectsScreen = ({ route, navigation }) => {
     )
   }
 
-  const handleComplete = (project) => {
-    // Logic to handle completion of the project
-    console.log(`Complete project: ${project.title}`)
+  const handleComplete = (projectId) => {
+    //Check if all tasks of the project are completed
+    db.transaction((tx) => {
+      tx.executeSql(
+        'SELECT * FROM tasks WHERE projectId = ? and status != ? ',
+        [projectId, 'Completed'],
+        (_, { rows }) => {
+          if (rows.length > 0) {
+            Alert.alert(
+              'Error',
+              `${rows.length} project tasks are still in-pogress, please complete the tasks to complete project.`
+            )
+          } else {
+            // No open tasks .. close the project
+            // Update the propject status to 'Complete' in the database
+            db.transaction((tx) => {
+              tx.executeSql(
+                'UPDATE projects SET status = ?, completedByUserId = ?, completedDateTime = CURRENT_TIMESTAMP WHERE id = ?',
+                ['Completed', userId, projectId],
+                (tx, results) => {
+                  if (results.rowsAffected > 0) {
+                    console.log(
+                      `project with ID ${projectId} marked as complete.`
+                    )
+                    // Perform any additional actions or updates after marking the task as complete
+                  } else {
+                    console.log(`No project found with ID ${projectId}.`)
+                  }
+                },
+                (tx, error) => {
+                  console.log('Error updating project status: ', error)
+                }
+              )
+            })
+          }
+        },
+        (tx, error) => {
+          console.log('Error reading project tasks status: ', error)
+        }
+      )
+    })
+
+    // Refresh the project list
+    fetchProjects()
   }
 
-  const handleTasks = (project) => {
-    // Logic to handle tasks of the project
-    console.log(`View tasks of project: ${project.title}`)
-  }
+  const handleDeleteProject = () => {}
 
   const toggleModal = () => {
     setProjectModalVisible(!isProjectModalVisible)
@@ -170,6 +236,8 @@ const ProjectsScreen = ({ route, navigation }) => {
 
   const handleAddProject = () => {
     const trimmedTitle = newProjectTitle.trim()
+    const completedByUserId = ''
+    const completedDateTime = ''
 
     if (trimmedTitle.length === 0) {
       console.log('Project title is empty.')
@@ -178,11 +246,19 @@ const ProjectsScreen = ({ route, navigation }) => {
 
     db.transaction((tx) => {
       tx.executeSql(
-        'INSERT INTO projects (title, adminId, totalHours, totalCost, status) VALUES (?, ?, ?, ?, ?)',
-        [trimmedTitle, parseInt(userId, 10), 0, 0, 'In Progress'],
+        'INSERT INTO projects (title, adminId, completedByUserId, completedDateTime, totalHours, totalCost, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [
+          trimmedTitle,
+          parseInt(userId, 10),
+          completedByUserId,
+          completedDateTime,
+          0,
+          0,
+          'In Progress',
+        ],
         (_, { insertId }) => {
-          console.log('Project inserted successfully. Insert ID: ', insertId)
-          console.log('adminID:::', userId)
+          //console.log('Project inserted successfully. Insert ID: ', insertId)
+          // console.log('adminID:::', userId)
           // Reset the new project title and close the modal
           setNewProjectTitle('')
           toggleModal()
@@ -201,7 +277,7 @@ const ProjectsScreen = ({ route, navigation }) => {
         <Text>Hello {userEmail}</Text>
       </View>
       <View style={styles.header}>
-        <Text style={styles.title}>All Projects ({projectCount})</Text>
+        <Text style={styles.title}>All Projects</Text>
         <TouchableOpacity onPress={toggleModal} style={styles.button}>
           <Text style={styles.buttonText}>Add</Text>
         </TouchableOpacity>
@@ -319,12 +395,31 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 16,
   },
-  cardbuttonComplete: {
-    backgroundColor: '#009900',
+  cardbuttonDelete: {
+    borderWidth: 1,
+    borderColor: 'red',
     width: '30%',
     padding: 5,
     borderRadius: 10,
     alignItems: 'center',
+  },
+  buttonTextDelete: {
+    color: 'red',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  cardbuttonComplete: {
+    borderWidth: 1,
+    borderColor: '#009900',
+    width: '30%',
+    padding: 5,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  buttonTextComplete: {
+    color: '#009900',
+    fontWeight: '700',
+    fontSize: 16,
   },
   buttonWrapper: {
     flex: 1,

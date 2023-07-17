@@ -62,6 +62,16 @@ const TasksScreen = ({ route, navigation }) => {
   // Check if the 'Tasks' table exists, create it if not
   useEffect(() => {
     db.transaction((tx) => {
+      /*       tx.executeSql(
+        `DROP TABLE IF EXISTS tasks;`,
+        [],
+        () => {
+          //  console.log('Table created successfully.')
+        },
+        (error) => {
+          console.log('Error creating table: ', error)
+        }
+      ) */
       tx.executeSql(
         `CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -169,10 +179,6 @@ const TasksScreen = ({ route, navigation }) => {
     const isAssigned = item.assignedTo === userId
     const isAdmin = item.createdByUserId === userId
 
-    const completeTask = () => {
-      handleComplete(item.id)
-    }
-
     return (
       <View style={cardStyle}>
         <View style={styles.projectContainer}>
@@ -216,7 +222,7 @@ const TasksScreen = ({ route, navigation }) => {
             )}
             {!isCompleted && (isAssigned || isAdmin) && (
               <TouchableOpacity
-                onPress={completeTask}
+                onPress={() => handleComplete(item.id)}
                 style={styles.cardbuttonComplete}
                 disabled={isCompleted}
               >
@@ -264,13 +270,11 @@ const TasksScreen = ({ route, navigation }) => {
       setTasksCount(0)
 
       setTasksCount(filteredTasks.length)
-      console.log('my')
     } else {
       fetchTasks()
       setTasksList(tasksList)
       setTasksCount(0)
       setTasksCount(tasksList.length)
-      console.log(tasksList.length)
     }
   }
 
@@ -293,7 +297,8 @@ const TasksScreen = ({ route, navigation }) => {
         `SELECT projects.*, users.email as email 
          FROM projects
          INNER JOIN users ON projects.adminId = users.id
-         WHERE projects.adminId = ?`,
+         WHERE projects.adminId = ?
+         AND projects.status != 'Completed'`,
         [userId],
         (_, { rows }) => {
           if (rows.length > 0) {
@@ -553,7 +558,7 @@ const TasksScreen = ({ route, navigation }) => {
       <View style={styles.header}>
         <TouchableOpacity onPress={toggleTasks} style={styles.toggleButton}>
           <Text style={styles.title}>
-            {showMyTasks ? 'All Tasks' : 'My Tasks'} ({tasksCount})
+            {showMyTasks ? 'All Tasks' : 'My Tasks'}
           </Text>
         </TouchableOpacity>
         <Switch
