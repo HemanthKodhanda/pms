@@ -197,25 +197,24 @@ const ProjectsScreen = ({ route, navigation }) => {
           } else {
             // No open tasks .. close the project
             // Update the propject status to 'Complete' in the database
-            db.transaction((tx) => {
-              tx.executeSql(
-                'UPDATE projects SET status = ?, completedByUserId = ?, completedDateTime = CURRENT_TIMESTAMP WHERE id = ?',
-                ['Completed', userId, projectId],
-                (tx, results) => {
-                  if (results.rowsAffected > 0) {
-                    console.log(
-                      `project with ID ${projectId} marked as complete.`
-                    )
-                    // Perform any additional actions or updates after marking the task as complete
-                  } else {
-                    console.log(`No project found with ID ${projectId}.`)
-                  }
-                },
-                (tx, error) => {
-                  console.log('Error updating project status: ', error)
+
+            tx.executeSql(
+              'UPDATE projects SET status = ?, completedByUserId = ?, completedDateTime = CURRENT_TIMESTAMP WHERE id = ?',
+              ['Completed', userId, projectId],
+              (tx, results) => {
+                if (results.rowsAffected > 0) {
+                  console.log(
+                    `project with ID ${projectId} marked as complete.`
+                  )
+                  // Perform any additional actions or updates after marking the task as complete
+                } else {
+                  console.log(`No project found with ID ${projectId}.`)
                 }
-              )
-            })
+              },
+              (tx, error) => {
+                console.log('Error updating project status: ', error)
+              }
+            )
           }
         },
         (tx, error) => {
@@ -224,6 +223,7 @@ const ProjectsScreen = ({ route, navigation }) => {
       )
     })
 
+    setProjectList([])
     // Refresh the project list
     fetchProjects()
   }
