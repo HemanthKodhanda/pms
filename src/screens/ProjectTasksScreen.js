@@ -17,6 +17,8 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { UserContext } from '../UserContext'
 import * as SQLite from 'expo-sqlite'
+import RNPickerSelect from 'react-native-picker-select'
+import DateTimePicker from '@react-native-community/datetimepicker'
 
 function openDatabase() {
   if (Platform.OS === 'web') {
@@ -43,6 +45,23 @@ const ProjectTasksScreen = () => {
   const { projid } = route.params
   const [projectName, setProjectName] = useState('')
   const [projectTasks, setProjectTasks] = useState([])
+  const [isModalVisible, setModalVisible] = useState(false)
+  const titleInputRef = useRef(null)
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [projectId, setProjectId] = useState('')
+  const [selectedDependencyTask, setSelectedDependencyTask] = useState(0)
+  const [assignedTo, setAssignedTo] = useState('')
+  const [projects, setProjects] = useState([])
+  const [users, setUsers] = useState([])
+  const [startDate, setStartDate] = useState(new Date())
+  const [endDate, setEndDate] = useState(new Date())
+  const [hourlyRate, setHourlyRate] = useState('')
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false)
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false)
+  const [hoursWorked, setHoursWorked] = useState('')
+  const [currentHours, setcurrentHours] = useState('')
+  const [tasksCount, setTasksCount] = useState('')
 
   // Fetch all Tasks from the 'Tasks' table
   const fetchTasks = () => {
@@ -87,6 +106,7 @@ const ProjectTasksScreen = () => {
             const sortedTasks = taskslist.sort((a, b) => b.id - a.id)
             setProjectTasks('')
             setProjectTasks(sortedTasks)
+            setTasksCount(sortedTasks.length)
           } else {
             // Alert.alert('Error', 'No Data available')
           }
@@ -120,6 +140,234 @@ const ProjectTasksScreen = () => {
   useEffect(() => {
     fetchTasks()
   }, [])
+
+  useEffect(() => {
+    fetchProjects()
+    fetchUsers()
+    if (isModalVisible) {
+      titleInputRef.current.focus()
+    }
+  }, [isModalVisible])
+
+  const toggleTaskModal = () => {
+    setModalVisible(!isModalVisible)
+    // Reset the form fields
+    setTitle('')
+    setDescription('')
+    setProjectId('')
+    setStartDate(new Date())
+    setEndDate(new Date())
+    setHourlyRate('')
+    setAssignedTo('')
+  }
+
+  // Fetch all projects from the 'projects' table
+  const fetchProjects = () => {
+    db.transaction((tx) => {
+      tx.executeSql(
+        `SELECT projects.*, users.email as email 
+         FROM projects
+         INNER JOIN users ON projects.adminId = users.id
+         WHERE projects.adminId = ?
+         AND projects.status != 'Completed'`,
+        [userId],
+        (_, { rows }) => {
+          if (rows.length > 0) {
+            const results = rows._array
+            const projectlist = results.map((project) => {
+              return {
+                id: project.id,
+                title: project.title,
+                adminid: project.adminId,
+                adminemail: project.email,
+                totalHours: project.totalHours,
+                totalCost: project.totalCost,
+                status: project.status,
+              }
+            })
+            const sortedProjects = projectlist.sort((a, b) => b.id - a.id)
+            setProjects(sortedProjects)
+            // console.log(sortedProjects)
+          } else {
+            // Alert.alert('Error', 'No Data available')
+          }
+        },
+        (tx, error) => {
+          console.log('Error fetching projects: ', error)
+        }
+      )
+    })
+  }
+
+  const fetchUsers = () => {
+    // Fetch users from the users table and set the users state
+    db.transaction((tx) => {
+      tx.executeSql(
+        'SELECT * FROM users',
+        [],
+        (_, { rows }) => {
+          if (rows.length > 0) {
+            const results = rows._array
+
+            const userslist = results.map((user) => {
+              return {
+                id: user.id,
+                email: user.email,
+              }
+            })
+            const sortedUsers = userslist.sort((a, b) => b.id - a.id)
+
+            // console.log(sortedUsers)
+            setUsers(sortedUsers)
+          } else {
+            // Alert.alert('Error', 'No Data available')
+          }
+        },
+        (tx, error) => {
+          console.log('Error fetching users: ', error)
+        }
+      )
+    })
+  }
+
+  const handleStartDateChange = (event, date) => {
+    if (Platform.OS === 'android') {
+      setShowStartDatePicker(false)
+    }
+    setStartDate(date || startDate)
+  }
+
+  const handleEndDateChange = (event, date) => {
+    if (Platform.OS === 'android') {
+      setShowEndDatePicker(false)
+    }
+    setEndDate(date || endDate)
+  }
+
+  const showStartDatePickerModal = () => {
+    setShowStartDatePicker(true)
+  }
+
+  const showEndDatePickerModal = () => {
+    setShowEndDatePicker(true)
+  }
+
+  const handleCreateTask = () => {
+    if (
+      title.trim() === '' ||
+      description.trim() === '' ||
+      projectId === '' ||
+      startDate === '' ||
+      endDate === '' ||
+      hourlyRate === '' ||
+      assignedTo === ''
+    ) {
+      Alert.alert(
+        'Missing Details',
+        'Please enter all the details of the task.'
+      )
+    } else {
+      // Create a new task with the entered details
+      const newTask = {
+        title,
+        description,
+        projectId,
+        selectedDependencyTask,
+        startDate,
+        endDate,
+        createdByUserId: userId,
+        assignedTo,
+        completedByUserId: '',
+        completedDateTime: '',
+        status: 'In Progress',
+        hourlyRate,
+        hoursWorked: 0,
+        totalCost: 0,
+      }
+
+      // Insert the new task into the tasks table
+      db.transaction((tx) => {
+        tx.executeSql(
+          `INSERT INTO tasks (title, description, projectId, dependencyTaskId, startDate, endDate, createdByUserId, assignedToUserId, 
+                            completedByUserId, completedDateTime, status, hourlyRate, hoursWorked, totalCost )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            newTask.title,
+            newTask.description,
+            newTask.projectId,
+            newTask.selectedDependencyTask,
+            newTask.startDate.toISOString(),
+            newTask.endDate.toISOString(),
+            newTask.createdByUserId,
+            newTask.assignedTo,
+            newTask.completedByUserId,
+            newTask.completedDateTime,
+            newTask.status,
+            newTask.hourlyRate,
+            newTask.hoursWorked,
+            newTask.totalCost,
+          ],
+          (tx, results) => {
+            // Task inserted successfully
+            console.log('New task inserted with ID: ', results.insertId)
+          },
+          (tx, error) => {
+            // Error occurred while inserting task
+            console.log('Error inserting task: ', error)
+          }
+        )
+      })
+
+      // Reset the form fields
+      setTitle('')
+      setDescription('')
+      setProjectId('')
+      setStartDate(new Date())
+      setEndDate(new Date())
+      setHourlyRate('')
+      setAssignedTo('')
+      // Close the modal
+      toggleTaskModal()
+      fetchTasks()
+      fetchProjects()
+      fetchUsers()
+    }
+  }
+
+  const handleProjectChange = (projectid) => {
+    setProjectId(projectid)
+    //selectedDependencyTask(0) // Reset selected dependency when project changes
+  }
+
+  const handleDeleteTask = (taskId) => {
+    Alert.alert(
+      'Confirm Delete',
+      'Are you sure you want to delete this task?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', onPress: () => onDelete(taskId) },
+      ]
+    )
+  }
+
+  const onDelete = (taskId) => {
+    // Perform deletion logic based on the taskId
+    db.transaction((tx) => {
+      tx.executeSql(
+        'DELETE FROM tasks WHERE id = ?',
+        [taskId],
+        (tx, results) => {
+          // Task deleted successfully
+          // console.log('Task deleted')
+        },
+        (tx, error) => {
+          console.log('Error executing query:', error)
+        }
+      )
+    })
+    // Update the tasks state to reflect the changes
+    fetchTasks()
+  }
 
   const renderItem = ({ item }) => {
     let cardStyle = styles.card
@@ -164,6 +412,17 @@ const ProjectTasksScreen = () => {
               </View>
             )}
           </View>
+          <View style={styles.buttonContainer}>
+            {!isCompleted && (isAssigned || isAdmin) && (
+              <TouchableOpacity
+                //onPress={toggleAddHoursModal}
+                onPress={() => handleDeleteTask(item.id)}
+                style={styles.cardbuttonDelete}
+              >
+                <Text style={styles.buttonTextDelete}>Delete</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </View>
     )
@@ -172,10 +431,18 @@ const ProjectTasksScreen = () => {
   return (
     <View style={styles.container}>
       <View>
-        <Text>Hello {userEmail}</Text>
+        <Text>
+          Hello {userEmail} {isAdmin ? <Text>(Admin)</Text> : null}
+        </Text>
       </View>
       <View style={styles.header}>
-        <Text style={styles.title}>Project Tasks :: {projectName}</Text>
+        <Text style={styles.title}>
+          {projectName} Tasks ({tasksCount})
+        </Text>
+
+        <TouchableOpacity onPress={toggleTaskModal} style={styles.button}>
+          <Text style={styles.buttonText}>Add</Text>
+        </TouchableOpacity>
       </View>
       <FlatList
         data={projectTasks}
@@ -183,6 +450,115 @@ const ProjectTasksScreen = () => {
         keyExtractor={(item) => item.id}
         style={styles.list}
       />
+
+      {/* Add Task Modal */}
+      <Modal visible={isModalVisible} animationType="slide" transparent>
+        <KeyboardAvoidingView style={styles.container} behavior="padding">
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Create New Task</Text>
+            <TextInput
+              style={[styles.input, { color: 'black' }]}
+              ref={titleInputRef}
+              placeholder="Title*"
+              placeholderTextColor="gray"
+              value={title}
+              onChangeText={setTitle}
+            />
+            <TextInput
+              style={[styles.input, { color: 'black' }]}
+              placeholder="Description*"
+              placeholderTextColor="gray"
+              value={description}
+              onChangeText={setDescription}
+            />
+            <TouchableOpacity
+              style={styles.dateInput}
+              onPress={showStartDatePickerModal}
+            >
+              <Text style={styles.dateInputLabel}>Start Date*</Text>
+              <Text>{startDate.toDateString()}</Text>
+            </TouchableOpacity>
+            {showStartDatePicker && (
+              <DateTimePicker
+                value={startDate}
+                mode="date"
+                display="default"
+                onChange={handleStartDateChange}
+              />
+            )}
+            <TouchableOpacity
+              style={styles.dateInput}
+              onPress={showEndDatePickerModal}
+            >
+              <Text style={styles.dateInputLabel}>End Date*</Text>
+              <Text>{endDate.toDateString()}</Text>
+            </TouchableOpacity>
+            {showEndDatePicker && (
+              <DateTimePicker
+                value={endDate}
+                mode="date"
+                display="default"
+                onChange={handleEndDateChange}
+              />
+            )}
+            <TextInput
+              style={[styles.input, { color: 'black' }]}
+              placeholder="Hourly Rate*"
+              placeholderTextColor="gray"
+              value={hourlyRate}
+              onChangeText={setHourlyRate}
+            />
+            <RNPickerSelect
+              items={projects.map((project) => ({
+                label: project.title,
+                value: project.id,
+              }))}
+              onValueChange={(value) => handleProjectChange(value)}
+              placeholder={{ label: 'Select Project*', value: null }}
+              value={projectId}
+              style={pickerSelectStyles}
+            />
+            <RNPickerSelect
+              items={
+                projectTasks && projectTasks.length > 0
+                  ? projectTasks.map((ptask) => ({
+                      label: 'Task#' + ptask.id + ':: ' + ptask.title,
+                      value: ptask.id,
+                    }))
+                  : [{ label: 'No tasks available', value: 0 }]
+              }
+              onValueChange={(value) => setSelectedDependencyTask(value)}
+              placeholder={{ label: 'Select Dependency', value: null }}
+              value={selectedDependencyTask}
+              style={pickerSelectStyles}
+            />
+            <RNPickerSelect
+              items={users.map((user) => ({
+                label: user.email,
+                value: user.id,
+              }))}
+              onValueChange={(value) => setAssignedTo(value)}
+              placeholder={{ label: 'Select User*', value: null }}
+              value={assignedTo}
+              style={pickerSelectStyles}
+            />
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={toggleTaskModal}
+              >
+                <Text style={styles.cancelButtonLabel}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={handleCreateTask}
+              >
+                <Text style={styles.addButtonLabel}>Create Task</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   )
 }

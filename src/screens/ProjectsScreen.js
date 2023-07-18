@@ -39,6 +39,7 @@ const ProjectsScreen = ({ route, navigation }) => {
   const [newProjectTitle, setNewProjectTitle] = useState('')
   const [projectList, setProjectList] = useState([])
   const titleInputRef = useRef(null)
+
   //const navigation = useNavigation()
 
   // Check if the 'projects' table exists, create it if not
@@ -340,7 +341,9 @@ const ProjectsScreen = ({ route, navigation }) => {
   return (
     <View style={styles.container}>
       <View>
-        <Text>Hello {userEmail}</Text>
+        <Text>
+          Hello {userEmail} {isAdmin ? <Text>(Admin)</Text> : null}
+        </Text>
       </View>
       <View style={styles.header}>
         <Text style={styles.title}>My Projects</Text>

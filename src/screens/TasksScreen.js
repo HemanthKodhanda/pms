@@ -148,7 +148,7 @@ const TasksScreen = ({ route, navigation }) => {
             const sortedTasks = taskslist.sort((a, b) => b.id - a.id)
             setTasksList('')
             setTasksList(sortedTasks)
-            //setTasksCount(tasksList.length)
+            setTasksCount(sortedTasks.length)
             //console.log(sortedTasks)
           } else {
             // Alert.alert('Error', 'No Data available')
@@ -681,15 +681,17 @@ const TasksScreen = ({ route, navigation }) => {
   return (
     <View style={styles.container}>
       <View>
-        <Text>Hello {userEmail}</Text>
+        <Text>
+          Hello {userEmail} {isAdmin ? <Text>(Admin)</Text> : null}
+        </Text>
       </View>
       <View style={styles.header}>
-        <Text style={styles.title}>My Tasks</Text>
-        {shouldShowAddButton && (
+        <Text style={styles.title}>My Tasks ({tasksCount})</Text>
+        {/*         {shouldShowAddButton && (
           <TouchableOpacity onPress={toggleTaskModal} style={styles.button}>
             <Text style={styles.buttonText}>Add</Text>
           </TouchableOpacity>
-        )}
+        )} */}
       </View>
       <FlatList
         data={tasksList}
