@@ -126,10 +126,10 @@ const DashboardScreen = ({ route, navigation }) => {
   return (
     <View style={styles.container}>
       <Text>
-        Hello {userEmail} {isAdmin ? <Text>(Admin)</Text> : null}
+        Hello {userEmail} {isAdmin ? '(Admin)' : ''}
       </Text>
       <Text style={styles.title}>Dashboard</Text>
-      {isAdmin && (
+      {isAdmin ? (
         <View style={styles.card}>
           <Text style={styles.titleText}>My Projects Overview</Text>
           <Text>Total Projects: {projectsOverview.totalProjects}</Text>
@@ -151,6 +151,8 @@ const DashboardScreen = ({ route, navigation }) => {
             </TouchableOpacity>
           </View>
         </View>
+      ) : (
+        <View></View>
       )}
       <View style={styles.TasksCard}>
         <Text style={styles.titleText}>My Tasks Overview</Text>
