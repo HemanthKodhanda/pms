@@ -5,6 +5,7 @@ const UserContext = React.createContext()
 const UserProvider = ({ children }) => {
   const [userId, setUserId] = React.useState('')
   const [userEmail, setUserEmail] = React.useState('')
+  const [isAdmin, setIsAdmin] = React.useState(false)
   return (
     <UserContext.Provider
       value={{
@@ -12,6 +13,8 @@ const UserProvider = ({ children }) => {
         setUserId,
         userEmail,
         setUserEmail,
+        isAdmin,
+        setIsAdmin,
       }}
     >
       {children}

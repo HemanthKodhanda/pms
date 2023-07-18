@@ -13,6 +13,7 @@ import {
 import React, { useEffect, useState, useRef, useContext } from 'react'
 import * as SQLite from 'expo-sqlite'
 import { UserContext } from '../UserContext'
+import { useNavigation } from '@react-navigation/native'
 
 function openDatabase() {
   if (Platform.OS === 'web') {
@@ -32,11 +33,13 @@ function openDatabase() {
 const db = openDatabase()
 
 const ProjectsScreen = ({ route, navigation }) => {
-  const { userId, setUserId, userEmail, setUserEmail } = useContext(UserContext)
+  const { userId, setUserId, userEmail, setUserEmail, isAdmin, setIsAdmin } =
+    useContext(UserContext)
   const [isProjectModalVisible, setProjectModalVisible] = useState(false)
   const [newProjectTitle, setNewProjectTitle] = useState('')
   const [projectList, setProjectList] = useState([])
   const titleInputRef = useRef(null)
+  //const navigation = useNavigation()
 
   // Check if the 'projects' table exists, create it if not
   useEffect(() => {
@@ -82,8 +85,10 @@ const ProjectsScreen = ({ route, navigation }) => {
          LEFT JOIN tasks ON projects.id = tasks.projectId
          LEFT JOIN (SELECT COUNT(*) as nooftasks, projectId from tasks WHERE status != 'Completed' GROUP BY projectId) as inprogressTasks ON projects.id = inprogressTasks.projectId
          LEFT JOIN (SELECT COUNT(*) as nooftasks, projectId from tasks WHERE status == 'Completed' GROUP BY projectId) as completedTasks ON projects.id = completedTasks.projectId
-         GROUP BY projects.id`,
-        [],
+         WHERE adminId = ?
+         GROUP BY projects.id
+         `,
+        [userId],
         (_, { rows }) => {
           if (rows.length > 0) {
             const results = rows._array
@@ -137,12 +142,13 @@ const ProjectsScreen = ({ route, navigation }) => {
     }
 
     const isCompleted = item.status === 'Completed'
-    const isAdmin = item.adminid === userId
 
     return (
       <View style={cardStyle}>
         <View style={styles.projectContainer}>
-          <Text style={styles.titleText}>{item.title}</Text>
+          <Text style={styles.titleText}>
+            Project{item.id}::{item.title}
+          </Text>
           <Text style={styles.admin}>Admin: {item.adminemail}</Text>
           <Text>Total Hours: {item.totalHours}</Text>
           <Text>Total Cost: ${item.totalCost}</Text>
@@ -158,7 +164,7 @@ const ProjectsScreen = ({ route, navigation }) => {
             {/*             <TouchableOpacity onPress={() => {}} style={styles.cardbuttonTasks}>
               <Text style={styles.buttonTextTasks}>Tasks</Text>
             </TouchableOpacity> */}
-            {!isCompleted && isAdmin && (
+            {!isCompleted && item.adminid === userId && (
               <TouchableOpacity
                 //onPress={toggleAddHoursModal}
                 onPress={() => handleDeleteProject(item.id)}
@@ -167,7 +173,16 @@ const ProjectsScreen = ({ route, navigation }) => {
                 <Text style={styles.buttonTextDelete}>Delete</Text>
               </TouchableOpacity>
             )}
-            {!isCompleted && isAdmin && (
+
+            <TouchableOpacity
+              //onPress={toggleAddHoursModal}
+              onPress={() => handleButtonPress(item.id)}
+              style={styles.cardbuttonTasks}
+            >
+              <Text style={styles.buttonTextTasks}>Tasks</Text>
+            </TouchableOpacity>
+
+            {!isCompleted && item.adminid === userId && (
               <TouchableOpacity
                 onPress={() => handleComplete(item.id)}
                 style={styles.cardbuttonComplete}
@@ -228,7 +243,58 @@ const ProjectsScreen = ({ route, navigation }) => {
     fetchProjects()
   }
 
-  const handleDeleteProject = () => {}
+  const handleButtonPress = (projectId) => {
+    navigation.navigate('ProjectTasks', {
+      projid: projectId,
+    })
+  }
+
+  const handleDeleteProject = (projectId) => {
+    //Check if project has any tasks, no deletion allowed if tasks created for project
+    db.transaction((tx) => {
+      tx.executeSql(
+        'SELECT * FROM tasks WHERE projectId = ? ',
+        [projectId],
+        (_, { rows }) => {
+          if (rows.length > 0) {
+            Alert.alert('Error', `Project has tasks, deletion not allowed.`)
+          } else {
+            // No tasks .. delete the project
+            Alert.alert(
+              'Confirm Delete',
+              'Are you sure you want to delete the project?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', onPress: () => onDelete(projectId) },
+              ]
+            )
+          }
+        },
+        (tx, error) => {
+          console.log('Error reading project tasks status: ', error)
+        }
+      )
+    })
+  }
+
+  const onDelete = (projectId) => {
+    // Perform deletion logic based on the taskId
+    db.transaction((tx) => {
+      tx.executeSql(
+        'DELETE FROM projects WHERE id = ?',
+        [projectId],
+        (tx, results) => {
+          // Task deleted successfully
+          // console.log('Task deleted')
+        },
+        (tx, error) => {
+          console.log('Error executing query:', error)
+        }
+      )
+    })
+    // Update the tasks state to reflect the changes
+    fetchProjects()
+  }
 
   const toggleModal = () => {
     setProjectModalVisible(!isProjectModalVisible)
@@ -277,7 +343,7 @@ const ProjectsScreen = ({ route, navigation }) => {
         <Text>Hello {userEmail}</Text>
       </View>
       <View style={styles.header}>
-        <Text style={styles.title}>All Projects</Text>
+        <Text style={styles.title}>My Projects</Text>
         <TouchableOpacity onPress={toggleModal} style={styles.button}>
           <Text style={styles.buttonText}>Add</Text>
         </TouchableOpacity>

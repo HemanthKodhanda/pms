@@ -16,6 +16,7 @@ import { UserContext } from '../UserContext'
 import RNPickerSelect from 'react-native-picker-select'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { Switch } from 'react-native-paper'
+import { useRoute } from '@react-navigation/native'
 
 function openDatabase() {
   if (Platform.OS === 'web') {
@@ -35,13 +36,16 @@ function openDatabase() {
 const db = openDatabase()
 
 const TasksScreen = ({ route, navigation }) => {
-  const { userId, setUserId, userEmail, setUserEmail } = useContext(UserContext)
+  const { userId, setUserId, userEmail, setUserEmail, isAdmin, setIsAdmin } =
+    useContext(UserContext)
   const [isModalVisible, setModalVisible] = useState(false)
   const [isAddHoursModalVisible, setAddHoursModalVisible] = useState(false)
   const [tasksList, setTasksList] = useState([])
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [projectId, setProjectId] = useState('')
+  const [projectTasks, setProjectTasks] = useState([])
+  const [selectedDependencyTask, setSelectedDependencyTask] = useState(0)
   const [assignedTo, setAssignedTo] = useState('')
   const [projects, setProjects] = useState([])
   const [users, setUsers] = useState([])
@@ -78,6 +82,7 @@ const TasksScreen = ({ route, navigation }) => {
         title TEXT,
         description TEXT,
         projectId INTEGER,
+        dependencyTaskId INTEGER,
         startDate TEXT,
         endDate TEXT,
         createdByUserId INTEGER,
@@ -104,12 +109,15 @@ const TasksScreen = ({ route, navigation }) => {
   const fetchTasks = () => {
     db.transaction((tx) => {
       tx.executeSql(
-        `SELECT Tasks.*, projects.title as project, users.email as email, users1.email as completedBy 
-         FROM Tasks
+        `SELECT Tasks.*, DepTasks.id as DepTaskId, DepTasks.title as DepTaskTitle, DepTasks.status as DepTaskStatus,
+         projects.id as projectid, projects.title as project, users.email as email, users1.email as completedBy 
+         FROM tasks as Tasks
+         LEFT JOIN Tasks as DepTasks ON Tasks.dependencyTaskId = DepTasks.id
          INNER JOIN projects ON Tasks.projectId = projects.id
          INNER JOIN Users ON Tasks.assignedToUserId = users.id
-         LEFT JOIN Users as users1 ON Tasks.completedByUserId = users1.id`,
-        [],
+         LEFT JOIN Users as users1 ON Tasks.completedByUserId = users1.id
+         WHERE Tasks.assignedToUserId = ?`,
+        [userId],
         (_, { rows }) => {
           if (rows.length > 0) {
             const results = rows._array
@@ -118,7 +126,11 @@ const TasksScreen = ({ route, navigation }) => {
               return {
                 id: task.id,
                 title: task.title,
+                projectid: task.projectid,
                 project: task.project,
+                deptaskid: task.DepTaskId,
+                deptasktitle: task.DepTaskTitle,
+                deptaskstatus: task.DepTaskStatus,
                 assignedTo: task.assignedToUserId,
                 email: task.email,
                 status: task.status,
@@ -162,6 +174,14 @@ const TasksScreen = ({ route, navigation }) => {
   }, [isModalVisible])
 
   useEffect(() => {
+    if (projectId) {
+      const fetchedTasks = fetchTasksByProject(projectId)
+      setProjectTasks(fetchedTasks)
+      console.log(fetchedTasks)
+    }
+  }, [projectId])
+
+  useEffect(() => {
     if (isAddHoursModalVisible) {
       hoursWorkedInputRef.current.focus()
     }
@@ -177,26 +197,50 @@ const TasksScreen = ({ route, navigation }) => {
 
     const isCompleted = item.status === 'Completed'
     const isAssigned = item.assignedTo === userId
-    const isAdmin = item.createdByUserId === userId
+    const shouldHideAddButton = isAdmin ? true : false
 
     return (
       <View style={cardStyle}>
         <View style={styles.projectContainer}>
-          <Text style={styles.titleText}>{item.title}</Text>
-          <Text>Project: {item.project}</Text>
-          <Text>Assigned To: {item.email}</Text>
-          <Text>Start Date: {item.startDate}</Text>
-          <Text>End Date: {item.endDate}</Text>
-          <Text>Hourly Rate: {item.hourlyrate}</Text>
-          <Text>Hours Worked: {item.hoursworked}</Text>
-          <Text>Cost: ${item.cost}</Text>
-          <Text>Status: {item.status}</Text>
           <View>
+            <Text style={styles.titleText}>
+              Task#{item.id} {item.title}
+            </Text>
+            <Text>
+              Project#{item.projectid}: {item.project}
+            </Text>
+            <Text>Assigned To: {item.email}</Text>
+            <Text>Start Date: {item.startDate}</Text>
+            <Text>End Date: {item.endDate}</Text>
+            <Text>Hourly Rate: {item.hourlyrate}</Text>
+            <Text>Hours Worked: {item.hoursworked}</Text>
+            <Text>Cost: ${item.cost}</Text>
+            <Text>Status: {item.status}</Text>
             {isCompleted && <Text>Completed By: {item.completedBy}</Text>}
             {isCompleted && <Text>Completed At: {item.completedDateTime}</Text>}
+            {item.deptaskid && (
+              <View style={styles.dependencyContainer}>
+                <Text style={styles.dependencyLabel}>Dependency:</Text>
+                <Text>
+                  TaskId {item.deptaskid} :: {item.deptasktitle}
+                </Text>
+                <Text style={styles.dependencyDescription}>
+                  Task Status: {item.deptaskstatus}
+                </Text>
+              </View>
+            )}
           </View>
           <View style={styles.buttonContainer}>
             {!isCompleted && (isAssigned || isAdmin) && (
+              <TouchableOpacity
+                //onPress={toggleAddHoursModal}
+                onPress={() => handleDeleteTask(item.id)}
+                style={styles.cardbuttonDelete}
+              >
+                <Text style={styles.buttonTextDelete}>Delete</Text>
+              </TouchableOpacity>
+            )}
+            {!isCompleted && isAssigned && (
               <TouchableOpacity
                 //onPress={toggleAddHoursModal}
                 onPress={() =>
@@ -211,16 +255,7 @@ const TasksScreen = ({ route, navigation }) => {
                 <Text style={styles.buttonTextTasks}>Add Hours</Text>
               </TouchableOpacity>
             )}
-            {!isCompleted && isAdmin && (
-              <TouchableOpacity
-                //onPress={toggleAddHoursModal}
-                onPress={() => handleDeleteTask(item.id)}
-                style={styles.cardbuttonDelete}
-              >
-                <Text style={styles.buttonTextDelete}>Delete</Text>
-              </TouchableOpacity>
-            )}
-            {!isCompleted && (isAssigned || isAdmin) && (
+            {!isCompleted && isAssigned && (
               <TouchableOpacity
                 onPress={() => handleComplete(item.id)}
                 style={styles.cardbuttonComplete}
@@ -279,15 +314,77 @@ const TasksScreen = ({ route, navigation }) => {
   }
 
   const handleOpenAddHoursModal = (taskId, hoursWorked, hourlyRate) => {
-    setSelectedTaskId(taskId)
-    setselectedHourlyRate(hourlyRate)
-    console.log(hourlyRate)
-    if (hoursWorked !== null) {
-      setcurrentHours(hoursWorked)
-    } else {
-      setcurrentHours(0)
-    }
-    setAddHoursModalVisible(true)
+    db.transaction((tx) => {
+      tx.executeSql(
+        `SELECT Tasks.id as id, DepTasks.id as depid,  DepTasks.status as depstatus
+         FROM tasks Tasks
+         LEFT JOIN tasks DepTasks 
+         ON Tasks.dependencyTaskId = DepTasks.id
+         WHERE Tasks.id  = ?`,
+        [taskId],
+        (_, { rows }) => {
+          if (rows.length > 0) {
+            const results = rows._array
+            if (
+              results[0].depstatus != null &&
+              results[0].depstatus != 'Completed'
+            ) {
+              Alert.alert('Error', 'Depedency task is not completed.')
+            } else {
+              setSelectedTaskId(taskId)
+              setselectedHourlyRate(hourlyRate)
+              if (hoursWorked !== null) {
+                setcurrentHours(hoursWorked)
+              } else {
+                setcurrentHours(0)
+              }
+              setAddHoursModalVisible(true)
+            }
+          } else {
+            // Alert.alert('Error', 'No Data available')
+          }
+        },
+        (tx, error) => {
+          console.log('Error fetching : ', error)
+        }
+      )
+    })
+  }
+
+  const handleProjectChange = (projectid) => {
+    setProjectId(projectid)
+    //selectedDependencyTask(0) // Reset selected dependency when project changes
+  }
+
+  // Function to fetch tasks based on the selected project
+  const fetchTasksByProject = (projectId) => {
+    db.transaction((tx) => {
+      tx.executeSql(
+        'SELECT * FROM Tasks WHERE projectId = ?',
+        [projectId],
+        (_, { rows }) => {
+          if (rows.length > 0) {
+            const results = rows._array
+            const projecttaskslist = results.map((ptask) => {
+              return {
+                id: ptask.id,
+                title: ptask.title,
+                status: ptask.status,
+              }
+            })
+            const sortedProjectTasks = projecttaskslist.sort(
+              (a, b) => b.id - a.id
+            )
+            setProjectTasks(sortedProjectTasks)
+          } else {
+            return []
+          }
+        },
+        (tx, error) => {
+          console.log('Error fetching projects: ', error)
+        }
+      )
+    })
   }
 
   // Fetch all projects from the 'projects' table
@@ -401,6 +498,7 @@ const TasksScreen = ({ route, navigation }) => {
         title,
         description,
         projectId,
+        selectedDependencyTask,
         startDate,
         endDate,
         createdByUserId: userId,
@@ -416,13 +514,14 @@ const TasksScreen = ({ route, navigation }) => {
       // Insert the new task into the tasks table
       db.transaction((tx) => {
         tx.executeSql(
-          `INSERT INTO tasks (title, description, projectId, startDate, endDate, createdByUserId, assignedToUserId, 
+          `INSERT INTO tasks (title, description, projectId, dependencyTaskId, startDate, endDate, createdByUserId, assignedToUserId, 
                             completedByUserId, completedDateTime, status, hourlyRate, hoursWorked, totalCost )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             newTask.title,
             newTask.description,
             newTask.projectId,
+            newTask.selectedDependencyTask,
             newTask.startDate.toISOString(),
             newTask.endDate.toISOString(),
             newTask.createdByUserId,
@@ -462,21 +561,48 @@ const TasksScreen = ({ route, navigation }) => {
   }
 
   const handleComplete = (taskId) => {
-    // Update the task status to 'Complete' in the database
     db.transaction((tx) => {
       tx.executeSql(
-        'UPDATE tasks SET status = ?, completedByUserId = ?, completedDateTime = CURRENT_TIMESTAMP WHERE id = ?',
-        ['Completed', userId, taskId],
-        (tx, results) => {
-          if (results.rowsAffected > 0) {
-            console.log(`Task with ID ${taskId} marked as complete.`)
-            // Perform any additional actions or updates after marking the task as complete
+        `SELECT Tasks.id as id, Tasks.hoursWorked as hoursWorked, DepTasks.id as depid,  DepTasks.status as depstatus
+         FROM tasks Tasks
+         LEFT JOIN tasks DepTasks 
+         ON Tasks.dependencyTaskId = DepTasks.id
+         WHERE Tasks.id  = ?`,
+        [taskId],
+        (_, { rows }) => {
+          if (rows.length > 0) {
+            const results = rows._array
+            if (
+              results[0].depstatus != null &&
+              results[0].depstatus != 'Completed'
+            ) {
+              Alert.alert('Error', 'Depedency task is not completed.')
+            } else if (results[0].hoursWorked > 0) {
+              // Update the task status to 'Complete' in the database
+              tx.executeSql(
+                'UPDATE tasks SET status = ?, completedByUserId = ?, completedDateTime = CURRENT_TIMESTAMP WHERE id = ?',
+                ['Completed', userId, taskId],
+                (tx, results) => {
+                  if (results.rowsAffected > 0) {
+                    console.log(`Task with ID ${taskId} marked as complete.`)
+                    // Perform any additional actions or updates after marking the task as complete
+                  } else {
+                    console.log(`No task found with ID ${taskId}.`)
+                  }
+                },
+                (tx, error) => {
+                  console.log('Error updating task status: ', error)
+                }
+              )
+            } else {
+              Alert.alert('Error', 'No working hours added to task.')
+            }
           } else {
-            console.log(`No task found with ID ${taskId}.`)
+            // Alert.alert('Error', 'No Data available')
           }
         },
         (tx, error) => {
-          console.log('Error updating task status: ', error)
+          console.log('Error fetching projects: ', error)
         }
       )
     })
@@ -550,26 +676,20 @@ const TasksScreen = ({ route, navigation }) => {
     fetchTasks()
   }
 
+  const shouldShowAddButton = isAdmin ? true : false
+
   return (
     <View style={styles.container}>
       <View>
         <Text>Hello {userEmail}</Text>
       </View>
       <View style={styles.header}>
-        <TouchableOpacity onPress={toggleTasks} style={styles.toggleButton}>
-          <Text style={styles.title}>
-            {showMyTasks ? 'All Tasks' : 'My Tasks'}
-          </Text>
-        </TouchableOpacity>
-        <Switch
-          value={showMyTasks}
-          onValueChange={toggleTasks}
-          color="#0782F9"
-          style={styles.switch}
-        />
-        <TouchableOpacity onPress={toggleTaskModal} style={styles.button}>
-          <Text style={styles.buttonText}>Add</Text>
-        </TouchableOpacity>
+        <Text style={styles.title}>My Tasks</Text>
+        {shouldShowAddButton && (
+          <TouchableOpacity onPress={toggleTaskModal} style={styles.button}>
+            <Text style={styles.buttonText}>Add</Text>
+          </TouchableOpacity>
+        )}
       </View>
       <FlatList
         data={tasksList}
@@ -586,14 +706,14 @@ const TasksScreen = ({ route, navigation }) => {
             <TextInput
               style={[styles.input, { color: 'black' }]}
               ref={titleInputRef}
-              placeholder="Title"
+              placeholder="Title*"
               placeholderTextColor="gray"
               value={title}
               onChangeText={setTitle}
             />
             <TextInput
               style={[styles.input, { color: 'black' }]}
-              placeholder="Description"
+              placeholder="Description*"
               placeholderTextColor="gray"
               value={description}
               onChangeText={setDescription}
@@ -602,7 +722,7 @@ const TasksScreen = ({ route, navigation }) => {
               style={styles.dateInput}
               onPress={showStartDatePickerModal}
             >
-              <Text style={styles.dateInputLabel}>Start Date</Text>
+              <Text style={styles.dateInputLabel}>Start Date*</Text>
               <Text>{startDate.toDateString()}</Text>
             </TouchableOpacity>
             {showStartDatePicker && (
@@ -617,7 +737,7 @@ const TasksScreen = ({ route, navigation }) => {
               style={styles.dateInput}
               onPress={showEndDatePickerModal}
             >
-              <Text style={styles.dateInputLabel}>End Date</Text>
+              <Text style={styles.dateInputLabel}>End Date*</Text>
               <Text>{endDate.toDateString()}</Text>
             </TouchableOpacity>
             {showEndDatePicker && (
@@ -630,7 +750,7 @@ const TasksScreen = ({ route, navigation }) => {
             )}
             <TextInput
               style={[styles.input, { color: 'black' }]}
-              placeholder="Hourly Rate"
+              placeholder="Hourly Rate*"
               placeholderTextColor="gray"
               value={hourlyRate}
               onChangeText={setHourlyRate}
@@ -640,9 +760,23 @@ const TasksScreen = ({ route, navigation }) => {
                 label: project.title,
                 value: project.id,
               }))}
-              onValueChange={(value) => setProjectId(value)}
-              placeholder={{ label: 'Select Project', value: null }}
+              onValueChange={(value) => handleProjectChange(value)}
+              placeholder={{ label: 'Select Project*', value: null }}
               value={projectId}
+              style={pickerSelectStyles}
+            />
+            <RNPickerSelect
+              items={
+                projectTasks && projectTasks.length > 0
+                  ? projectTasks.map((ptask) => ({
+                      label: 'Task#' + ptask.id + ':: ' + ptask.title,
+                      value: ptask.id,
+                    }))
+                  : [{ label: 'No tasks available', value: 0 }]
+              }
+              onValueChange={(value) => setSelectedDependencyTask(value)}
+              placeholder={{ label: 'Select Dependency', value: null }}
+              value={selectedDependencyTask}
               style={pickerSelectStyles}
             />
             <RNPickerSelect
@@ -651,7 +785,7 @@ const TasksScreen = ({ route, navigation }) => {
                 value: user.id,
               }))}
               onValueChange={(value) => setAssignedTo(value)}
-              placeholder={{ label: 'Select User', value: null }}
+              placeholder={{ label: 'Select User*', value: null }}
               value={assignedTo}
               style={pickerSelectStyles}
             />
@@ -914,6 +1048,22 @@ const styles = StyleSheet.create({
   },
   switch: {
     transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }],
+  },
+  dependencyContainer: {
+    marginTop: 16,
+  },
+  dependencyLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  dependencyTitle: {
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  dependencyDescription: {
+    fontSize: 12,
+    color: '#888888',
   },
 })
 

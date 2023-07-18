@@ -8,23 +8,33 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { NavigationContainer, TabNavigator } from '@react-navigation/native'
+import {
+  NavigationContainer,
+  TabNavigator,
+  getFocusedRouteNameFromRoute,
+} from '@react-navigation/native'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { UserProvider } from './src/UserContext'
+import React, { useEffect, useState, useRef, useContext } from 'react'
+import { UserContext } from './src/UserContext'
 
 import Login from './src/screens/LoginScreen'
 import Logout from './src/screens/LogoutScreen'
 import Dashboard from './src/screens/DashboardScreen'
 import Projects from './src/screens/ProjectsScreen'
 import Tasks from './src/screens/TasksScreen'
+import ProjectTasks from './src/screens/ProjectTasksScreen'
 
 const Tab = createBottomTabNavigator()
 
 const Stack = createNativeStackNavigator()
 
 function MyTabs() {
+  const { isAdmin, setIsAdmin } = useContext(UserContext)
+  const shouldHideTabBar = isAdmin ? true : false
+
   return (
     <Tab.Navigator
       initialRouteName="Dashboard"
@@ -61,14 +71,19 @@ function MyTabs() {
           blur: () => navigation.setParams({ screen: undefined }),
         })}
       />
-      <Tab.Screen
-        name="Projects"
-        component={Projects}
-        options={{ unmountOnBlur: true }}
-        listeners={({ navigation }) => ({
-          blur: () => navigation.setParams({ screen: undefined }),
-        })}
-      />
+      {shouldHideTabBar && (
+        <Tab.Screen
+          name="Projects"
+          component={Projects}
+          options={{
+            unmountOnBlur: true,
+          }}
+          listeners={({ navigation }) => ({
+            blur: () => navigation.setParams({ screen: undefined }),
+          })}
+        />
+      )}
+
       <Tab.Screen
         name="Tasks"
         component={Tasks}
@@ -103,6 +118,11 @@ export default function App() {
             name="BottomNavbar"
             options={{ headerShown: false }}
             component={MyTabs}
+          />
+          <Stack.Screen
+            options={{ headerShown: true }}
+            name="ProjectTasks"
+            component={ProjectTasks}
           />
         </Stack.Navigator>
       </NavigationContainer>

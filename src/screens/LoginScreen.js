@@ -6,6 +6,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Modal,
 } from 'react-native'
 import { useNavigation } from '@react-navigation/core'
 import React, { useEffect, useState, useContext } from 'react'
@@ -33,15 +34,27 @@ const db = openDatabase()
 const LoginScreen = () => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const { userId, setUserId, userEmail, setUserEmail } = useContext(UserContext)
+  const [isModalVisible, setIsModalVisible] = useState(false)
+  const { userId, setUserId, userEmail, setUserEmail, isAdmin, setIsAdmin } =
+    useContext(UserContext)
 
   const navigation = useNavigation()
 
   useEffect(() => {
     try {
       db.transaction((tx) => {
+        /*         tx.executeSql(
+          `DROP TABLE IF EXISTS users;`,
+          [],
+          () => {
+            //  console.log('Table created successfully.')
+          },
+          (error) => {
+            console.log('Error creating table: ', error)
+          }
+        ) */
         tx.executeSql(
-          'CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT, password TEXT)',
+          'CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT, password TEXT, isAdmin BOOLEAN)',
           [],
           () => {},
           (_, error) => {
@@ -74,6 +87,8 @@ const LoginScreen = () => {
             results.map((user) => {
               setUserId(user.id)
               setUserEmail(user.email)
+              setIsAdmin(user.isAdmin)
+              console.log(isAdmin)
             })
 
             navigation.push('BottomNavbar', {
@@ -109,8 +124,8 @@ const LoginScreen = () => {
             Alert.alert('Error', 'User already exists')
           } else {
             tx.executeSql(
-              'INSERT INTO users (email, password) VALUES (?, ?)',
-              [email, password],
+              'INSERT INTO users (email, password, isAdmin) VALUES (?, ?, ?)',
+              [email, password, isAdmin],
               (_, { rowsAffected }) => {
                 if (rowsAffected > 0) {
                   Alert.alert('Success', `${email} registered successfully.`)
@@ -129,38 +144,95 @@ const LoginScreen = () => {
         }
       )
     })
+
+    // Reset the form
+    setEmail('')
+    setPassword('')
+    setIsAdmin(false)
+
+    // Close the modal
+    setIsModalVisible(false)
+  }
+
+  const toggleModal = () => {
+    setIsModalVisible(!isModalVisible)
   }
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior="padding">
-      <View style={styles.inputContainer}>
-        <TextInput
-          placeholder="Email"
-          value={email}
-          onChangeText={(text) => setEmail(text)}
-          style={styles.input}
-        />
-        <TextInput
-          placeholder="Password"
-          value={password}
-          onChangeText={(text) => setPassword(text)}
-          style={styles.input}
-          secureTextEntry
-        />
-      </View>
+    <View style={styles.container}>
+      <KeyboardAvoidingView style={styles.inputContainer} behavior="padding">
+        <View>
+          <TextInput
+            placeholder="Email"
+            value={email}
+            onChangeText={(text) => setEmail(text)}
+            style={styles.input}
+          />
+          <TextInput
+            placeholder="Password"
+            value={password}
+            onChangeText={(text) => setPassword(text)}
+            style={styles.input}
+            secureTextEntry
+          />
+        </View>
 
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity onPress={handleLogin} style={styles.button}>
-          <Text style={[styles.buttonText]}>Login</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={handleRegister}
-          style={[styles.button, styles.buttonOutline]}
-        >
-          <Text style={styles.buttonOutlineText}>Register</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity onPress={handleLogin} style={styles.button}>
+            <Text style={[styles.buttonText]}>Login</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={toggleModal}
+            style={[styles.button, styles.buttonOutline]}
+          >
+            <Text style={styles.buttonOutlineText}>Register</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+
+      <Modal visible={isModalVisible} animationType="slide" transparent>
+        <KeyboardAvoidingView style={styles.container} behavior="padding">
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>User Registration</Text>
+            <TextInput
+              style={styles.modalinput}
+              placeholder="Email"
+              placeholderTextColor="gray"
+              value={email}
+              onChangeText={setEmail}
+            />
+            <TextInput
+              style={styles.modalinput}
+              placeholder="Password"
+              placeholderTextColor="gray"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+            />
+            <TouchableOpacity
+              style={styles.adminCheckbox}
+              onPress={() => setIsAdmin(!isAdmin)}
+            >
+              <Text style={styles.adminCheckboxText}>Admin</Text>
+              <View style={styles.checkbox}>
+                {isAdmin && <View style={styles.checkboxInner} />}
+              </View>
+            </TouchableOpacity>
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity style={styles.button} onPress={handleRegister}>
+                <Text style={styles.buttonText}>Register</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={toggleModal}
+              >
+                <Text style={styles.cancelButtonLabel}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </View>
   )
 }
 
@@ -183,15 +255,15 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   buttonContainer: {
-    width: '60%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 40,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
   },
   button: {
     backgroundColor: '#0782F9',
-    width: '100%',
-    padding: 15,
+    width: '30%',
+    marginTop: 5,
+    padding: 10,
     borderRadius: 10,
     alignItems: 'center',
   },
@@ -210,5 +282,98 @@ const styles = StyleSheet.create({
     color: '#0782F9',
     fontWeight: '700',
     fontSize: 16,
+  },
+  adminCheckbox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  adminCheckboxText: {
+    fontSize: 16,
+    marginRight: 10,
+    color: 'gray',
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 1,
+    borderColor: 'gray',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxInner: {
+    width: 12,
+    height: 12,
+    backgroundColor: '#0782F9',
+  },
+  cancelButton: {
+    backgroundColor: 'gray',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButtonLabel: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 20,
+    margin: 20,
+    width: '90%',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  cancelButton: {
+    backgroundColor: 'gray',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButtonLabel: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  modalinput: {
+    fontSize: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: 'gray',
+    borderRadius: 4,
+    color: 'black',
+    paddingRight: 30,
+    marginBottom: 10,
+    backgroundColor: 'white',
+    marginTop: 8,
+  },
+  modalButton: {
+    backgroundColor: '#007AFF',
+    paddingVertical: 8,
+    borderRadius: 5,
+    marginBottom: 10,
+  },
+  modalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  disabledModalButton: {
+    opacity: 0.5,
   },
 })
