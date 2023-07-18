@@ -145,9 +145,9 @@ const DashboardScreen = ({ route, navigation }) => {
           <View style={styles.buttonContainer}>
             <TouchableOpacity
               onPress={() => handleProjectButtonPress()}
-              style={styles.cardbuttonTasks}
+              style={styles.cardbuttonProjects}
             >
-              <Text style={styles.buttonTextTasks}>Projects</Text>
+              <Text style={styles.buttonTextProjects}>Projects</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -246,6 +246,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 10,
+  },
+  cardbuttonProjects: {
+    borderWidth: 1,
+    borderColor: '#009900',
+    width: '30%',
+    padding: 5,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  buttonTextProjects: {
+    color: '#009900',
+    fontWeight: '700',
+    fontSize: 16,
   },
   cardbuttonTasks: {
     borderWidth: 1,
